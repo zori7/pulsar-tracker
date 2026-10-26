@@ -6,13 +6,53 @@ import {
   type QueryKey,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import type { Completion, CompletionMap, CompletionStatus, Item, Settings } from '@pulsar/shared';
+import type { Completion, CompletionMap, CompletionStatus, Item, Settings, User } from '@pulsar/shared';
 import { toCompletionMap } from '@pulsar/shared';
 import * as api from './api';
 import { useToast } from '../components/Toast';
 
 export const itemsKey = ['items'] as const;
 export const settingsKey = ['settings'] as const;
+export const meKey = ['me'] as const;
+
+/** Signed-in user (null = signed out). Any 401 elsewhere flips this to null. */
+export function useMeQuery(): UseQueryResult<User | null> {
+  return useQuery({
+    queryKey: meKey,
+    queryFn: api.fetchMe,
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Switch the signed-in user. `me` is updated in place (App observes it — a
+ * qc.clear() would orphan that observer), then every other account's data is dropped.
+ */
+function switchUser(qc: ReturnType<typeof useQueryClient>, user: User | null) {
+  qc.setQueryData(meKey, user);
+  qc.removeQueries({ predicate: (q) => q.queryKey[0] !== meKey[0] });
+}
+
+/** Login or signup; on success drop the previous account's cache and set me. */
+export function useAuthMutation(mode: 'login' | 'signup') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: mode === 'login' ? api.login : api.signup,
+    onSuccess: (user) => switchUser(qc, user),
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: api.logout,
+    onSuccess: () => switchUser(qc, null),
+    onError: (err) => {
+      toast(formatApiError(err, "Couldn't log out."));
+    },
+  });
+}
 
 /** Items + completions in one query (SPEC §4: completions cover a wide window). */
 export function useItemsQuery(since?: string, until?: string): UseQueryResult<api.ItemsResponse> {

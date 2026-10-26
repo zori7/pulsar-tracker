@@ -11,18 +11,21 @@ afterEach(async () => {
   await server.close();
 });
 
-describe('client id scoping', () => {
-  it('rejects requests without x-client-id with 400 missing-client-id', async () => {
-    const res = await server.api('GET', '/api/items', { clientId: null });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'missing-client-id' });
+describe('session scoping', () => {
+  it('rejects requests without a valid session with 401 unauthenticated', async () => {
+    const res = await server.api('GET', '/api/items', { as: null });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'unauthenticated' });
 
-    const blank = await server.api('GET', '/api/items', { clientId: '   ' });
-    expect(blank.status).toBe(400);
-    expect(await blank.json()).toEqual({ error: 'missing-client-id' });
+    // A legacy x-client-id alone no longer grants access.
+    const legacy = await server.api('GET', '/api/items', { as: null, headers: { 'x-client-id': 'client-a' } });
+    expect(legacy.status).toBe(401);
 
-    const health = await server.api('GET', '/api/health', { clientId: null });
-    expect(health.status).toBe(200); // health is the one open route (liveness)
+    const bogus = await server.api('GET', '/api/items', { as: null, headers: { cookie: 'pulsar_session=nope' } });
+    expect(bogus.status).toBe(401);
+
+    const health = await server.api('GET', '/api/health', { as: null });
+    expect(health.status).toBe(200); // health is open (liveness)
     expect(await health.json()).toEqual({ ok: true });
   });
 
@@ -37,7 +40,7 @@ describe('client id scoping', () => {
     expect((await server.api('GET', `/api/items/${item.id}`)).status).toBe(200);
 
     // Another client: 404 on every item route.
-    const asB = { clientId: 'client-b' };
+    const asB = { as: 'client-b' };
     expect((await server.api('GET', `/api/items/${item.id}`, asB)).status).toBe(404);
     expect((await server.api('PATCH', `/api/items/${item.id}`, { ...asB, body: { title: 'stolen' } })).status).toBe(404);
     expect((await server.api('DELETE', `/api/items/${item.id}`, asB)).status).toBe(404);
@@ -57,10 +60,11 @@ describe('client id scoping', () => {
   it('separates settings per client id', async () => {
     const a = (await (await server.api('GET', '/api/settings')).json()) as { settings: { clientId: string } };
     const b = (await (
-      await server.api('GET', '/api/settings', { clientId: 'client-b' })
+      await server.api('GET', '/api/settings', { as: 'client-b' })
     ).json()) as { settings: { clientId: string } };
-    expect(a.settings.clientId).toBe('client-a');
-    expect(b.settings.clientId).toBe('client-b');
+    expect(a.settings.clientId).toBe((await server.login('client-a')).userId);
+    expect(b.settings.clientId).toBe((await server.login('client-b')).userId);
+    expect(a.settings.clientId).not.toBe(b.settings.clientId);
   });
 });
 
@@ -220,7 +224,7 @@ describe('settings', () => {
   it('auto-provisions defaults on first GET and accepts partial PUT', async () => {
     const first = (await (await server.api('GET', '/api/settings')).json()) as { settings: unknown };
     expect(first.settings).toEqual({
-      clientId: 'client-a',
+      clientId: (await server.login('client-a')).userId,
       ntfyTopic: 'pulsar-tracker',
       ntfyServer: 'https://ntfy.sh',
       notificationsEnabled: true,

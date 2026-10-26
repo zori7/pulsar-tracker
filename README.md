@@ -1,7 +1,7 @@
 # Pulsar Tracker
 
-Self-hosted PWA loop habit tracker + one-time todos. No accounts: each browser keeps a
-generated client id and all data is scoped to it. Notifications go to [ntfy](https://ntfy.sh)
+Self-hosted PWA loop habit tracker + one-time todos. Simple username + password accounts
+(session cookie), so Safari and the home-screen PWA share the same data. Notifications go to [ntfy](https://ntfy.sh)
 (topic editable in the app).
 
 - Schedules: one-time todos, weekdays, days of month, every X days, and a **custom loop

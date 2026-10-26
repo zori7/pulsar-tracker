@@ -1,6 +1,7 @@
 // Dev mock of SPEC §4 for frontend iteration (Vite proxies /api -> :3000).
 // In-memory: state resets on restart. Not a substitute for the real API —
-// `npm run dev:api` runs that. Accepts any non-empty x-client-id.
+// `npm run dev:api` runs that. Auth is faked: any username/password signs in
+// (a flag, not a cookie — one shared session for the whole mock).
 //
 // Seed is computed relative to "today" at boot: a deep set of items due
 // YESTERDAY (to exercise day-list scrolling / backfill), plus a full mix for
@@ -27,6 +28,7 @@ const ago = (n) => addDays(today, -n);
 const ahead = (n) => addDays(today, n);
 
 const clientId = 'mock-client-0000-1111';
+let signedInAs = 'mock';
 let nextId = 100;
 const mk = (kind, title, schedule, extra = {}) => ({
   id: `m${nextId++}`,
@@ -136,8 +138,19 @@ const json = (res, code, body) => {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const path = url.pathname;
-  if (!req.headers['x-client-id']) return json(res, 400, { error: 'missing-client-id' });
   if (path === '/api/health') return json(res, 200, { ok: true });
+  if ((path === '/api/auth/login' || path === '/api/auth/signup') && req.method === 'POST') {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    signedInAs = JSON.parse(body || '{}').username || 'mock';
+    return json(res, path.endsWith('signup') ? 201 : 200, { user: { id: clientId, username: signedInAs } });
+  }
+  if (path === '/api/auth/logout' && req.method === 'POST') {
+    signedInAs = null;
+    return json(res, 204);
+  }
+  if (!signedInAs) return json(res, 401, { error: 'unauthenticated' });
+  if (path === '/api/auth/me') return json(res, 200, { user: { id: clientId, username: signedInAs } });
   if (path === '/api/items' && req.method === 'GET') return json(res, 200, { items, completions });
   if (path === '/api/settings' && req.method === 'GET') return json(res, 200, { settings });
   if (path === '/api/settings' && req.method === 'PUT') {

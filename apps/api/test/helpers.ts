@@ -11,8 +11,10 @@ import { readEnv } from '../src/env.js';
 import type { SendFn } from '../src/notifications/transport.js';
 
 export interface TestRequestOptions {
-  /** Header value; `null` omits the header entirely. Default: 'client-a'. */
-  clientId?: string | null;
+  /** Username to act as (signed up on first use); `null` sends no session. Default: 'client-a'. */
+  as?: string | null;
+  /** Extra request headers (e.g. a raw cookie or legacy x-client-id). */
+  headers?: Record<string, string>;
   body?: unknown;
   /** Override content-type (e.g. send a raw invalid JSON string). */
   rawBody?: string;
@@ -24,6 +26,8 @@ export interface TestServer {
   /** Transport stub passed into createApp. */
   send: Mock<SendFn>;
   api(method: string, path: string, opts?: TestRequestOptions): Promise<Response>;
+  /** Signs `username` up (once) and returns its session cookie + user id. */
+  login(username: string): Promise<{ cookie: string; userId: string }>;
   close(): Promise<void>;
 }
 
@@ -41,13 +45,32 @@ export async function startTestServer(): Promise<TestServer> {
   const { port } = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${port}`;
 
+  const sessions = new Map<string, { cookie: string; userId: string }>();
+
+  async function login(username: string) {
+    const cached = sessions.get(username);
+    if (cached) return cached;
+    const res = await fetch(`${base}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username, password: TEST_PASSWORD }),
+    });
+    if (res.status !== 201) throw new Error(`test signup failed for ${username}: ${res.status}`);
+    const { user } = (await res.json()) as { user: { id: string } };
+    const session = { cookie: sessionCookieFrom(res), userId: user.id };
+    sessions.set(username, session);
+    return session;
+  }
+
   return {
     base,
     db,
     send,
-    api: (method, path, opts = {}) => {
+    login,
+    api: async (method, path, opts = {}) => {
       const headers: Record<string, string> = {};
-      if (opts.clientId !== null) headers['x-client-id'] = opts.clientId ?? 'client-a';
+      if (opts.as !== null) headers.cookie = (await login(opts.as ?? 'client-a')).cookie;
+      Object.assign(headers, opts.headers);
       let body: string | undefined;
       if (opts.rawBody !== undefined) {
         headers['content-type'] = 'application/json';
@@ -64,6 +87,15 @@ export async function startTestServer(): Promise<TestServer> {
       rmSync(dir, { recursive: true, force: true });
     },
   };
+}
+
+export const TEST_PASSWORD = 'correct horse battery';
+
+/** `name=value` of the session cookie from a response's Set-Cookie. */
+export function sessionCookieFrom(res: Response): string {
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith('pulsar_session='));
+  if (!cookie) throw new Error('no session cookie in response');
+  return cookie.split(';')[0]!;
 }
 
 /** Valid schedule fixtures, one per type (SPEC §2). */

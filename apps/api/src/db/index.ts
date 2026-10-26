@@ -54,6 +54,24 @@ CREATE TABLE IF NOT EXISTS sent_notifications (
   created_at TEXT NOT NULL,
   UNIQUE(client_id, item_id, date, kind)
 );
+
+-- Accounts. users.id is the data-scoping key: every client_id column above
+-- holds a user id (legacy per-browser ids are claimed at signup).
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- Only a SHA-256 of the session token is stored; the raw token lives in the cookie.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 `;
 
 /** Opens (creating parent dirs as needed) and migrates the SQLite database. */

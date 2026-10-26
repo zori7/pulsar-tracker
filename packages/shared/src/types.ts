@@ -68,6 +68,12 @@ export interface Completion {
   updatedAt: string;
 }
 
+/** A signed-in account. `id` is the data-scoping key (the `clientId` elsewhere). */
+export interface User {
+  id: string;
+  username: string;
+}
+
 export interface Settings {
   clientId: string;
   ntfyTopic: string;

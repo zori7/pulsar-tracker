@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { Outlet, Route, Routes, useLocation, type Location } from 'react-router';
+import { Loader2 } from 'lucide-react';
 import { TabBar } from './components/TabBar';
+import { useMeQuery } from './lib/queries';
 import { useAppHeight } from './lib/useAppHeight';
 import { TodayPage } from './routes/Today';
 import { CalendarPage } from './routes/Calendar';
 import { ItemsPage } from './routes/Items';
 import { SettingsPage } from './routes/Settings';
 import { ItemFormPage } from './routes/ItemFormPage';
+import { AuthPage } from './routes/Auth';
 
 /** App shell: fixed-height flex column so the tab bar can never detach from
     the bottom. Height is bound to the true visible area (`--app-h` from
@@ -51,6 +54,36 @@ interface BackgroundState {
 export default function App() {
   // Keep --app-h (shell height) synced to the real visible area.
   useAppHeight();
+  const me = useMeQuery();
+
+  // Network failure on the very first /me: let the user retry instead of
+  // dropping them on a sign-in form they may not need.
+  if (me.isError) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 text-center app-shell">
+        <p className="text-sm text-muted">Couldn't reach the server.</p>
+        <button
+          type="button"
+          onClick={() => void me.refetch()}
+          className="min-h-12 rounded-sq-md border border-surface-2 px-5 text-sm font-medium text-text"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (me.data === undefined) {
+    return (
+      <div className="flex items-center justify-center app-shell" aria-busy="true">
+        <Loader2 size={20} strokeWidth={1.75} className="animate-spin text-muted" />
+      </div>
+    );
+  }
+  if (me.data === null) return <AuthPage />;
+  return <SignedInApp />;
+}
+
+function SignedInApp() {
   const location = useLocation();
   const state = location.state as BackgroundState | null;
   const background = state?.background;

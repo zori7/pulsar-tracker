@@ -1,8 +1,9 @@
 # Pulsar Tracker — build spec (v1)
 
-A self-hosted PWA loop habit tracker + one-time todos. Single user, **no auth**: the
-browser generates a client id (UUID) once, persists it in `localStorage`, and sends it
-on every API call as `x-client-id`. All data is scoped to that id.
+A self-hosted PWA loop habit tracker + one-time todos. **Username + password accounts**
+with an HttpOnly session cookie, so the same data is reachable from Safari and the
+home-screen PWA (which keep separate cookie jars — each signs in once). All data is
+scoped to the user id (stored in the `client_id` columns).
 
 Runtime context: one PC running 24/7 behind Tailscale, opened from a phone. Plain HTTP
 is acceptable. Notifications go to **ntfy** (HTTP API by default, CLI script optional).
@@ -112,18 +113,32 @@ sent_notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, client_id TEXT NOT NULL
                    item_id TEXT, date TEXT NOT NULL, kind TEXT NOT NULL,   -- 'item'|'digest'
                    created_at TEXT NOT NULL,
                    UNIQUE(client_id, item_id, date, kind));                -- dedupe
+users(id TEXT PRIMARY KEY,                       -- = client_id in the tables above
+      username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL,  -- scrypt
+      created_at TEXT NOT NULL);
+sessions(token_hash TEXT PRIMARY KEY,            -- sha256 of the cookie token
+         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         created_at TEXT NOT NULL, expires_at TEXT NOT NULL);  -- 400 days, sliding
 ```
 
 DB file: `DATABASE_PATH` (default `./data/pulsar.db`), volume-mounted in compose.
 
 ## 4. HTTP API (`/api/*`, JSON)
 
-Every request must send `x-client-id: <uuid>`. Missing/invalid → `400`
-`{ error: 'missing-client-id' }`. Exception: `GET /api/health` is open (liveness for
-Docker/probes). Unknown item → `404`. Validation failure → `400`
+Every request needs a valid `pulsar_session` cookie (HttpOnly, SameSite=Lax,
+Path=/api, Secure only over HTTPS). Missing/expired → `401` `{ error: 'unauthenticated' }`.
+Open routes: `GET /api/health` (liveness for Docker/probes) and `POST /api/auth/{signup,
+login,logout}`. Unknown item → `404`. Validation failure → `400`
 `{ error: 'validation', details: string[] }`.
 
 ```
+POST   /api/auth/signup                  → 201 { user } + cookie   (body: {username,password})
+       # username 3–32 [A-Za-z0-9_.-], case-insensitive unique (409 username-taken);
+       # password ≥ 8. A legacy `x-client-id` header claims that pre-accounts browser's
+       # data as the new user's id (only if it has data and no account owns it).
+POST   /api/auth/login                   → { user } + cookie | 401 invalid-credentials
+POST   /api/auth/logout                  → 204, deletes this session only
+GET    /api/auth/me                      → { user } | 401 unauthenticated
 GET    /api/health                       → { ok: true }
 GET    /api/items                        → { items: Item[], completions: Completion[] }
        # completions cover [today-365, today+60]; ?since= & ?until= (YYYY-MM-DD) override
@@ -211,14 +226,16 @@ Missed days must be one tap away, never a chore:
    habit anchored last Monday with the loop phase kept). Schedule edits are global: they
    re-evaluate all dates (documented in the UI as "applies to past days too").
 - `/settings` — ntfy topic + server, notifications on/off, digest time, "Send test
-  notification", client id display, data export (JSON dump) + item management link.
+  notification", account (username + log out), data export (JSON dump) + item management link.
 - `/items` — all items (incl. archived), edit/delete, per-item reminder time.
 - Item create/edit: full-screen route on mobile (`/new`, `/items/:id`), modal sheet on
   desktop — same form component either way. Animated with framer-motion.
 
 Interaction requirements:
-- Client id: generated (`crypto.randomUUID()`) on first load, stored at
-  `localStorage['pulsar.client-id']`, sent as `x-client-id` header by the API client.
+- Auth: signed out → sign-in / sign-up screen in place of the shell (autocomplete
+  `username` / `current-password` / `new-password` for password managers). Any `401
+  unauthenticated` flips back to it. A leftover `localStorage['pulsar.client-id']` from
+  pre-accounts versions is sent once at signup to keep that data, then removed.
 - Completion toggles are **optimistic** (TanStack Query cache update + rollback).
 - Everything must work on a 390px-wide phone in one hand: bottom tab bar, large tap
   targets (≥ 44px), safe-area insets respected.

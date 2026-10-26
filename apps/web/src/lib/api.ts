@@ -5,78 +5,31 @@ import type {
   ItemKind,
   Schedule,
   Settings,
+  User,
 } from '@pulsar/shared';
 
 /**
- * Typed fetch client for SPEC.md §4. Every call carries the stable
- * `x-client-id` header; no auth beyond that.
+ * Typed fetch client for SPEC.md §4. Auth is an HttpOnly session cookie set by
+ * /api/auth/*; the browser attaches it to every same-origin call.
  */
 
-const CLIENT_ID_KEY = 'pulsar.client-id';
+/** Pre-accounts per-browser id. Only read now, to claim its data at signup. */
+const LEGACY_CLIENT_ID_KEY = 'pulsar.client-id';
 
-let cachedClientId: string | null = null;
-
-/** Format 16 bytes as an RFC-4122 v4 UUID (version + variant bits set). */
-function uuidFromBytes(bytes: Uint8Array): string {
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40; // version 4
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80; // variant 10xx
-  const p = (i: number) => bytes[i]!.toString(16).padStart(2, '0');
-  return (
-    `${p(0)}${p(1)}${p(2)}${p(3)}-${p(4)}${p(5)}` +
-    `-${p(6)}${p(7)}-${p(8)}${p(9)}` +
-    `-${p(10)}${p(11)}${p(12)}${p(13)}${p(14)}${p(15)}`
-  );
+function readLegacyClientId(): string | null {
+  try {
+    return localStorage.getItem(LEGACY_CLIENT_ID_KEY);
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Produce a UUID v4 without ever throwing — the app is served over plain HTTP
- * (insecure context) where `crypto.randomUUID` is unavailable (iOS Chrome /
- * WKWebView). `crypto.getRandomValues` is *not* secure-context gated, so it
- * covers that case; Math.random is the last resort.
- */
-function randomUUID(): string {
+function forgetLegacyClientId(): void {
   try {
-    if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+    localStorage.removeItem(LEGACY_CLIENT_ID_KEY);
   } catch {
-    /* insecure context or blocked — fall through */
+    /* storage blocked — nothing to forget */
   }
-  try {
-    if (typeof crypto?.getRandomValues === 'function') {
-      return uuidFromBytes(crypto.getRandomValues(new Uint8Array(16)));
-    }
-  } catch {
-    /* fall through */
-  }
-  // Not cryptographically strong, but total. Only reached in exotic cases.
-  let id = '';
-  for (let i = 0; i < 32; i++) {
-    id += Math.floor(Math.random() * 16).toString(16);
-  }
-  return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
-}
-
-/**
- * The stable per-browser client id. Total (never throws): localStorage and
- * crypto access are both guarded, so any page can call this during render.
- */
-export function getClientId(): string {
-  if (cachedClientId) return cachedClientId;
-  let id: string | null = null;
-  try {
-    id = localStorage.getItem(CLIENT_ID_KEY);
-  } catch {
-    /* storage blocked (private mode) — generate a fresh id below */
-  }
-  if (!id) {
-    id = randomUUID();
-    try {
-      localStorage.setItem(CLIENT_ID_KEY, id);
-    } catch {
-      /* can't persist — cached in memory for this session */
-    }
-  }
-  cachedClientId = id;
-  return id;
 }
 
 export class ApiError extends Error {
@@ -92,7 +45,6 @@ export class ApiError extends Error {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  headers.set('x-client-id', getClientId());
   if (init?.body) headers.set('content-type', 'application/json');
 
   let res: Response;
@@ -119,6 +71,42 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(res.status, err?.error ?? `http-${res.status}`, err?.details ?? []);
   }
   return body as T;
+}
+
+/* ----------------------------------------------------------------- auth */
+
+export interface Credentials {
+  username: string;
+  password: string;
+}
+
+/** Current user, or null when signed out (401). */
+export async function fetchMe(): Promise<User | null> {
+  try {
+    return (await apiFetch<{ user: User }>('/auth/me')).user;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return null;
+    throw err;
+  }
+}
+
+export async function signup(creds: Credentials): Promise<User> {
+  const legacyId = readLegacyClientId();
+  const { user } = await apiFetch<{ user: User }>('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify(creds),
+    headers: legacyId ? { 'x-client-id': legacyId } : undefined,
+  });
+  forgetLegacyClientId();
+  return user;
+}
+
+export async function login(creds: Credentials): Promise<User> {
+  return (await apiFetch<{ user: User }>('/auth/login', { method: 'POST', body: JSON.stringify(creds) })).user;
+}
+
+export function logout(): Promise<void> {
+  return apiFetch<void>('/auth/logout', { method: 'POST' });
 }
 
 /* ------------------------------------------------ items + completions */

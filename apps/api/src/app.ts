@@ -2,9 +2,10 @@ import express from 'express';
 import type { Express, NextFunction, Request, Response } from 'express';
 import type { DB } from './db/index.js';
 import { readEnv, type Env } from './env.js';
-import { clientIdMiddleware } from './http/clientId.js';
+import { sessionMiddleware } from './http/session.js';
 import { NotFoundError, ValidationError } from './http/errors.js';
 import { createTransport, type SendFn } from './notifications/transport.js';
+import { authRouter } from './routes/auth.js';
 import { itemsRouter } from './routes/items.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { settingsRouter } from './routes/settings.js';
@@ -21,15 +22,20 @@ export function createApp(db: DB, deps: AppDeps = {}): Express {
 
   const app = express();
   app.disable('x-powered-by');
+  // nginx terminates the client connection; trust it for req.secure (cookie flag).
+  app.set('trust proxy', 'loopback, uniquelocal');
   app.use(express.json());
 
-  // Liveness only — the single open route (no client id), for Docker/probes/curl.
+  // Liveness — open (no session), for Docker/probes/curl.
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ ok: true });
   });
 
-  // Every other /api route requires x-client-id (SPEC §4).
-  app.use('/api', clientIdMiddleware);
+  // Signup/login/logout are open; /me checks the session itself.
+  app.use('/api/auth', authRouter(db));
+
+  // Every other /api route requires a session cookie (SPEC §4).
+  app.use('/api', sessionMiddleware(db));
 
   app.use('/api/items', itemsRouter(db));
   app.use('/api/settings', settingsRouter(db, env));

@@ -64,6 +64,19 @@ export const settingsPatchSchema = z
   })
   .refine((value) => Object.keys(value).length > 0, 'at least one field is required');
 
+export const credentialsSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3, 'username must be at least 3 characters')
+    .max(32, 'username must be at most 32 characters')
+    .regex(/^[A-Za-z0-9_.-]+$/, 'username may only contain letters, digits, _ . -'),
+  password: z
+    .string()
+    .min(8, 'password must be at least 8 characters')
+    .max(256, 'password must be at most 256 characters'),
+});
+
 export type CreateItemBody = z.infer<typeof createItemSchema>;
 export type PatchItemBody = z.infer<typeof patchItemSchema>;
 export type SettingsPatchBody = z.infer<typeof settingsPatchSchema>;
