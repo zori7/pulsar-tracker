@@ -220,11 +220,12 @@ export function ItemForm({
       </div>
 
       {/* Actions — a real footer (sibling of the scroll region), flush at the
-          bottom of the sheet. Only the safe-area strip below the buttons —
+          bottom of the sheet. Only the safe-area strip below the buttons (with a
+          0.75rem floor for browser tabs, where the inset is 0) —
           and + --drawer-keyboard-inset lifts the bar above the iOS keyboard
           while a form drawer is open (the var is 0 unless a Base UI Drawer
           keyboard is aligned). */}
-      <div className="shrink-0 border-t border-surface-2 bg-surface px-5 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--drawer-keyboard-inset,0px))] transition-[padding-bottom] duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none">
+      <div className="shrink-0 border-t border-surface-2 bg-surface px-5 pt-3 pb-[calc(max(0.75rem,env(safe-area-inset-bottom,0px))+var(--drawer-keyboard-inset,0px))] transition-[padding-bottom] duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none">
         <div className="flex gap-2">
           <button
             type="button"

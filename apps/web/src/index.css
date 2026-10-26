@@ -265,8 +265,10 @@
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 0.75rem);
 }
 
+/* Bottom inset with a floor: in Safari (non-standalone) the toolbar owns the
+   bottom edge and the inset is 0, which would leave sheet footers flush. */
 @utility safe-b {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
 }
 
 @utility safe-t {
