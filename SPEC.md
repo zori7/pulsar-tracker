@@ -171,8 +171,8 @@ offers "Send test notification".
 **Deep links** (env `APP_URL`, e.g. `http://homebox:8700`; default in compose). Every
 message carries an ntfy `Click` action (`Click` header / `--click=<url>`) so tapping the
 notification opens the app at the right place:
-- item reminder → `/?date=<today>&item=<id>` — Today for that day with the item's sheet open;
-- digest → `/?date=<today>` — today's list;
+- item reminder and digest → `/?date=<today>` — the Today list for that day (no item
+  sheet; a stray `?item=` from older links is ignored);
 - test notification → `/`.
 
 With `APP_URL` empty the messages are sent without a click action. Note that on iOS the tap

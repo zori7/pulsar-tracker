@@ -65,7 +65,7 @@ async function tickClient(
     if (!markSent(db, clientId, item.id, today, 'item', now)) continue;
     const { title, message } = itemReminderMessage(item.title, item.description);
     // Tap-through lands on that day with this item's sheet open over Today.
-    const click = clickUrl(appUrl, `/?date=${today}&item=${item.id}`);
+    const click = clickUrl(appUrl, `/?date=${today}`);
     try {
       await send({
         server: settings.ntfy_server,

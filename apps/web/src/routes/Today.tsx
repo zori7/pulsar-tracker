@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
@@ -20,7 +20,7 @@ export function TodayPage() {
   const reduce = useReducedMotion();
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { pressed: fabPressed, pressProps: fabPressProps } = usePress();
 
   const today = useMemo(() => todayISO(), []);
@@ -33,32 +33,6 @@ export function TodayPage() {
   const [dismissedOn, setDismissedOn] = useState<string | null>(
     () => localStorage.getItem(MISSED_DISMISS_KEY),
   );
-
-  // Deep link: `?item=<id>` (notification taps) opens that item's sheet over
-  // Today. The param is stripped from this history entry first (replace), then
-  // the sheet route is pushed — so closing it (navigate(-1)) lands on a clean
-  // Today, and remounting Today (tab switches) can never re-trigger the sheet.
-  const itemParam = searchParams.get('item');
-  const handledItem = useRef<string | null>(null);
-  useEffect(() => {
-    if (!itemParam || handledItem.current === itemParam) return;
-    handledItem.current = itemParam;
-    const params = new URLSearchParams(searchParams);
-    params.delete('item');
-    const search = params.toString();
-    setSearchParams(params, { replace: true });
-    navigate(`/items/${encodeURIComponent(itemParam)}`, {
-      state: {
-        background: {
-          pathname: location.pathname,
-          search: search ? `?${search}` : '',
-          hash: '',
-          state: null,
-          key: location.key,
-        },
-      },
-    });
-  }, [itemParam, searchParams, setSearchParams, navigate, location.pathname, location.key]);
 
   const { data, isLoading } = useItemsQuery();
   const items = data?.items ?? [];

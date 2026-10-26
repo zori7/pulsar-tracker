@@ -252,7 +252,7 @@ describe('notification tick (dedupe via sent_notifications)', () => {
   it('attaches deep-link click URLs when an appUrl is configured', async () => {
     const db = makeDb();
     ensureSettingsRow(db, 'c1', { topic: 't', server: 'https://ntfy.example', digestTime: '09:15' }, reminderNow);
-    const habit = createItem(
+    createItem(
       db,
       'c1',
       {
@@ -265,12 +265,12 @@ describe('notification tick (dedupe via sent_notifications)', () => {
     );
     const { send, fn } = makeSend();
 
-    // Item reminder → that day, with the item's sheet open over Today.
+    // Item reminder → that day's Today list (no item sheet).
     // Trailing slash on the base must not survive into the URL.
     await runTick(db, fn, reminderNow, 'http://homebox:8700/');
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
-        click: `http://homebox:8700/?date=${today}&item=${habit.id}`,
+        click: `http://homebox:8700/?date=${today}`,
       }),
     );
 
