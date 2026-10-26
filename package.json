@@ -1,0 +1,32 @@
+{
+  "name": "pulsar-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w @pulsar/shared && npm run build -w @pulsar/api && npm run build -w @pulsar/web",
+    "test": "npm run test -w @pulsar/shared && npm run test -w @pulsar/api",
+    "dev:api": "npm run dev -w @pulsar/api",
+    "dev:web": "npm run dev -w @pulsar/web",
+    "dev:mock": "node scripts/mock-api.mjs",
+    "typecheck": "npm run typecheck -w @pulsar/shared && npm run typecheck -w @pulsar/api && npm run typecheck -w @pulsar/web"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsup": "^9.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.28.2": true,
+    "msgpackr-extract@3.0.4": true
+  }
+}

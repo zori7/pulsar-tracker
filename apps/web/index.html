@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Pulsar Tracker — a self-hosted loop habit tracker and one-time todos." />
+    <meta name="theme-color" content="#0B1020" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#F5F7FC" media="(prefers-color-scheme: light)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Pulsar" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Pulsar Tracker</title>
+    <script>
+      // Bind --app-h / --bottom-gap to the true visible area before first paint
+      // so the shell isn't one frame off while React boots. Keep in sync with
+      // src/lib/useAppHeight.ts (same measureAppHeight logic): visible =
+      // max(visualViewport, innerHeight); in standalone the shell must reach
+      // screen.height (the layout viewport ends 62pt above the physical bottom
+      // on the user's iPhone). NEVER clientHeight (self-referential feedback).
+      (function () {
+        try {
+          var vv = (window.visualViewport && window.visualViewport.height) || 0;
+          var inner = window.innerHeight || 0;
+          var visible = Math.max(vv, inner);
+          var standalone =
+            navigator.standalone === true ||
+            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+          var screenH = standalone && window.screen ? window.screen.height || 0 : 0;
+          var h = Math.max(visible, screenH);
+          if (h > 0) {
+            document.documentElement.style.setProperty('--app-h', Math.round(h) + 'px');
+            var gap = Math.max(0, h - visible);
+            if (gap > 0) document.documentElement.style.setProperty('--bottom-gap', Math.round(gap) + 'px');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

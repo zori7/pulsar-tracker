@@ -1,0 +1,38 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DATABASE_PATH: /data/pulsar.db
+      REDIS_URL: redis://redis:6379
+      NTFY_MODE: ${NTFY_MODE:-http}
+      NTFY_SERVER: ${NTFY_SERVER:-https://ntfy.sh}
+      NTFY_DEFAULT_TOPIC: ${NTFY_DEFAULT_TOPIC:-pulsar-tracker}
+      NTFY_BIN: ${NTFY_BIN:-ntfy}
+      # Public URL of the web app — notification tap-through (deep links).
+      APP_URL: ${APP_URL:-http://homebox:8700}
+      TZ: ${TZ:-UTC}
+    volumes:
+      # :Z relabels for SELinux hosts (Fedora/RHEL) — without it the container
+      # cannot write the bind mount at all, even as root.
+      - ./data:/data:Z
+    depends_on:
+      - redis
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8700:80"
+    depends_on:
+      - api
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
