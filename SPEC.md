@@ -109,6 +109,7 @@ completions(item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
 settings(client_id TEXT PRIMARY KEY, ntfy_topic TEXT NOT NULL, ntfy_server TEXT NOT NULL,
          notifications_enabled INTEGER NOT NULL DEFAULT 1, digest_time TEXT NOT NULL,
          updated_at TEXT NOT NULL);
+tick_state(id INTEGER PRIMARY KEY CHECK (id = 1), last_tick_at TEXT NOT NULL)  -- worker catch-up
 sent_notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, client_id TEXT NOT NULL,
                    item_id TEXT, date TEXT NOT NULL, kind TEXT NOT NULL,   -- 'item'|'digest'
                    created_at TEXT NOT NULL,
@@ -180,13 +181,17 @@ opens the URL in the browser (a plain-HTTP PWA cannot be launched via universal 
 the page is the same app.
 
 BullMQ (Redis, `REDIS_URL` default `redis://localhost:6379`) runs a repeatable `tick`
-job every minute **in the same process as Express**:
+job every minute **in the same process as Express**. Each tick covers the window from the
+previous tick (persisted in `tick_state`) to now, clamped to the start of today (server
+local time, `TZ` respected), so minutes missed during a Redis outage or restart are caught
+up on the next tick, but yesterday's leftovers are never sent. A first-ever tick covers
+the last minute only.
 1. For each client with `notifications_enabled`:
-2. `item` reminders: items due *today*, not archived, `reminderTime` equal to the current
-   `HH:MM` (server local time, `TZ` respected) and not already recorded in
+2. `item` reminders: items due *today*, not archived, `reminderTime` inside the window
+   and not already recorded in
    `sent_notifications` for (client, item, today, 'item') → one ntfy message per item:
    "⏰ <title> is due today" (+ optional description line).
-3. `digest` reminder: current `HH:MM` equals `digest_time`, at least one due item today is
+3. `digest` reminder: `digest_time` inside the window, at least one due item today is
    still **unmarked** (`done` and `skipped` both count as handled — a pre-skipped day must
    not nag), not already sent for (client, NULL, today, 'digest') → single message listing
    all due items with markers: ☑ done, ⊘ skipped, ☐ still to do.

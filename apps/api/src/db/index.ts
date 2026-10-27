@@ -55,6 +55,13 @@ CREATE TABLE IF NOT EXISTS sent_notifications (
   UNIQUE(client_id, item_id, date, kind)
 );
 
+-- Single-row worker bookkeeping: when the last notification tick finished, so the
+-- next tick can catch up on any minutes it missed (see worker/tick.ts).
+CREATE TABLE IF NOT EXISTS tick_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_tick_at TEXT NOT NULL
+);
+
 -- Accounts. users.id is the data-scoping key: every client_id column above
 -- holds a user id (legacy per-browser ids are claimed at signup).
 CREATE TABLE IF NOT EXISTS users (

@@ -5,6 +5,7 @@ import type { Weekday } from '@pulsar/shared';
 import { openDatabase, type DB } from '../src/db/index.js';
 import { ensureSettingsRow, updateSettingsRow, getSettingsRow } from '../src/db/settings.js';
 import { wasSent } from '../src/db/sent.js';
+import { setLastTickAt } from '../src/db/ticks.js';
 import { createItem } from '../src/services/items.js';
 import { setCompletion } from '../src/services/completions.js';
 import { runTick } from '../src/worker/tick.js';
@@ -25,7 +26,7 @@ function makeSend(): { send: Mock<SendFn>; fn: SendFn } {
 }
 
 describe('notification tick (dedupe via sent_notifications)', () => {
-  it('sends one item reminder when reminderTime matches HH:MM, and only once', async () => {
+  it('sends one item reminder when reminderTime falls in the tick window, and only once', async () => {
     const db = makeDb();
     ensureSettingsRow(db, 'c1', { topic: 'topic-1', server: 'https://ntfy.example', digestTime: '09:15' }, reminderNow);
     const habit = createItem(
@@ -307,5 +308,82 @@ describe('notification tick (dedupe via sent_notifications)', () => {
     expect(send).toHaveBeenCalledWith(expect.not.objectContaining({ click: expect.anything() }));
 
     db.close();
+  });
+
+  describe('catch-up window', () => {
+    const everyDay = { type: 'weekdays' as const, weekdays: [0, 1, 2, 3, 4, 5, 6] as Weekday[] };
+
+    function seed(db: DB, reminderTimes: string[], digestTime = '23:59'): void {
+      ensureSettingsRow(db, 'c1', { topic: 't', server: 'https://ntfy.example', digestTime }, reminderNow);
+      for (const reminderTime of reminderTimes) {
+        createItem(db, 'c1', { kind: 'habit', title: `At ${reminderTime}`, schedule: everyDay, reminderTime }, reminderNow);
+      }
+    }
+
+    it('catches up reminders from minutes the tick missed', async () => {
+      const db = makeDb();
+      seed(db, ['08:30']);
+      setLastTickAt(db, new Date(2026, 0, 15, 8, 28));
+      const { fn } = makeSend();
+
+      const result = await runTick(db, fn, new Date(2026, 0, 15, 8, 32));
+      expect(result.itemRemindersSent).toBe(1);
+
+      db.close();
+    });
+
+    it('sends reminders and the digest missed during downtime earlier today', async () => {
+      const db = makeDb();
+      seed(db, ['08:30'], '09:15');
+      setLastTickAt(db, new Date(2026, 0, 15, 8, 0));
+      const { fn } = makeSend();
+
+      const result = await runTick(db, fn, new Date(2026, 0, 15, 10, 0));
+      expect(result.itemRemindersSent).toBe(1);
+      expect(result.digestsSent).toBe(1);
+
+      db.close();
+    });
+
+    it('does not fire times before the window (e.g. a reminder set earlier than now)', async () => {
+      const db = makeDb();
+      seed(db, ['08:30', '15:00'], '09:15');
+      const { send, fn } = makeSend();
+
+      // First tick ever → one-minute window; then the regular next minute.
+      await runTick(db, fn, new Date(2026, 0, 15, 14, 59));
+      expect(send).not.toHaveBeenCalled();
+      const result = await runTick(db, fn, new Date(2026, 0, 15, 15, 0));
+      expect(result.itemRemindersSent).toBe(1);
+      expect(result.digestsSent).toBe(0);
+      expect(send).toHaveBeenCalledTimes(1);
+
+      db.close();
+    });
+
+    it("never carries yesterday's missed reminders past midnight", async () => {
+      const db = makeDb();
+      seed(db, ['23:55', '00:03']);
+      setLastTickAt(db, new Date(2026, 0, 14, 23, 50));
+      const { send, fn } = makeSend();
+
+      const result = await runTick(db, fn, new Date(2026, 0, 15, 0, 5));
+      expect(result.itemRemindersSent).toBe(1);
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ message: '⏰ At 00:03 is due today' }));
+
+      db.close();
+    });
+
+    it('sends nothing when the clock moves backwards', async () => {
+      const db = makeDb();
+      seed(db, ['08:30']);
+      setLastTickAt(db, new Date(2026, 0, 15, 9, 0));
+      const { send, fn } = makeSend();
+
+      await runTick(db, fn, new Date(2026, 0, 15, 8, 30));
+      expect(send).not.toHaveBeenCalled();
+
+      db.close();
+    });
   });
 });
